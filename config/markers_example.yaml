@@ -1,0 +1,16 @@
+# Example reflective marker map for reflector_lighthouse.
+# Coordinates are in the map frame [meters].
+#
+# Either provide marker points (pairs are auto-built and sorted by distance),
+# or provide precomputed constellation edges (GOZ SETDST format).
+
+markers:
+  - {id: 0, x: 0.0, y: 0.0}
+  - {id: 1, x: 2.0, y: 0.0}
+  - {id: 2, x: 2.0, y: 3.0}
+  - {id: 3, x: 0.0, y: 3.0}
+
+# Optional explicit edges (if present, "markers" list is ignored for matching):
+constellations:
+  - {dist: 2.0, x0: 0.0, y0: 0.0, x1: 2.0, y1: 0.0}
+  - {dist: 2.0, x0: 2.0, y0: 0.0, x1: 0.0, y1: 0.0}

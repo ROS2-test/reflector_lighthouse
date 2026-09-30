@@ -1,0 +1,31 @@
+/**:
+  ros__parameters:
+    scan_topic: /scan_light
+    odom_topic: /odometry/filtered
+    map_frame: map
+    intensity_min: 190.0
+    cluster_radius_m: 0.07
+    # Same as static TF base_link -> laser in bringup:
+    # 0.01 0 0.08 3.14 0 0 base_link laser
+    lidar_x: 0.01
+    lidar_y: 0.0
+    lidar_yaw: 3.14
+
+lighthouse_node:
+  ros__parameters:
+    pose_topic: /light_pose
+    max_dist_error: 0.08
+    max_xy_error: 0.5
+    max_pair_dist: 30.0
+    min_votes: 2
+    pose_variance_xy: 0.05
+    pose_variance_yaw: 0.05
+
+marker_mapper_node:
+  ros__parameters:
+    merge_radius_m: 0.25
+    min_observations: 3
+    max_range_m: 8.0
+    output_file: /home/user/ros2_ws/src/reflector_lighthouse/config/markers.yaml
+    enabled: true
+    save_on_shutdown: true
