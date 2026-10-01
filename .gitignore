@@ -1,0 +1,44 @@
+# ROS2 / colcon
+build/
+install/
+log/
+cache/
+beluga_underlay/
+.beluga_deb/
+
+
+# Python
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+dist/
+*.egg
+
+# Архивы и бэкапы
+*.zip
+
+# ROS bags
+*.db3
+*.db3-shm
+*.db3-wal
+
+# Редакторы и IDE
+*.swp
+*~
+.#*
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Встроенные git-репозитории (зависимости)
+firmware/dev_ws/
+src/micro_ros_agent/
+src/micro_ros_msgs/
+src/micro_ros_setup/
