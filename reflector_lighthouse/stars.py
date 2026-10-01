@@ -75,6 +75,7 @@ def stars_to_map(
 
 
 def build_pairs(markers: List[Tuple[float, float]], max_dist: float):
+    """Build pairs all to all."""
     pairs = []
     for i, (x0, y0) in enumerate(markers):
         for j in range(i + 1, len(markers)):
@@ -83,5 +84,16 @@ def build_pairs(markers: List[Tuple[float, float]], max_dist: float):
             if 0.0 < d <= max_dist:
                 pairs.append((d, x0, y0, x1, y1))
                 pairs.append((d, x1, y1, x0, y0))
+    pairs.sort(key=lambda p: p[0])
+    return pairs
+
+
+def read_pairs(markers: List[Tuple[float, float]], collections: list):
+    """Read and return pairs from file."""
+    pairs = []
+    for pair in collections:
+        pairs.append((
+            pair['dist'], pair['x0'], pair['y0'], pair['x1'], pair['y1']
+        ))
     pairs.sort(key=lambda p: p[0])
     return pairs

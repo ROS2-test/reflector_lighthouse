@@ -22,6 +22,7 @@ from sensor_msgs.msg import LaserScan
 from visualization_msgs.msg import Marker, MarkerArray
 
 from reflector_lighthouse.stars import (
+    read_pairs,
     build_pairs,
     find_stars,
     quat_from_yaw,
@@ -162,14 +163,25 @@ class LighthouseNode(Node):
             self.get_logger().warn('markers_file empty')
             return
         data = yaml.safe_load(Path(path).read_text(encoding='utf-8')) or {}
+
+        # parse markers
         markers = []
         for m in data.get('markers', []):
             if isinstance(m, dict):
                 markers.append((float(m['x']), float(m['y'])))
             else:
                 markers.append((float(m[0]), float(m[1])))
+
+        # parse collections or ubild it
         self._markers = markers
-        self._pairs = build_pairs(markers, float(self.get_parameter('max_pair_dist').value))
+        collections = data.get('constellations', [])
+        if collections == []:
+            self._pairs = build_pairs(
+                markers,
+                float(self.get_parameter('max_pair_dist').value)
+            )
+        else:
+            self._paires = read_pairs(self._markers, collections)
         self.get_logger().info(f'Loaded {len(markers)} markers')
 
     def _publish_map_markers(self) -> None:
