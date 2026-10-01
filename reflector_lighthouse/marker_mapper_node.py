@@ -3,20 +3,18 @@
 Auto-collect reflective markers into a YAML config while the robot moves.
 
 Services:
-  /marker_mapper_node/save_markers       — save markers meeting min_observations
-  /marker_mapper_node/save_markers_force — save all tracks (even 1 hit)
-  /marker_mapper_node/clear_markers      — clear tracks
+  /marker_mapper/save  — save all markers to YAML
+  /marker_mapper/clear — clear markers
 """
 
-from __future__ import annotations
-
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import rclpy
 import yaml
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
@@ -26,7 +24,9 @@ from std_msgs.msg import Empty
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker, MarkerArray
 
-from reflector_lighthouse.stars import find_stars, stars_to_map, yaw_from_quat
+from reflector_lighthouse.common import (
+    find_stars, stars_to_map, yaw_from_quat
+)
 
 
 @dataclass
@@ -34,17 +34,14 @@ class MarkerTrack:
     x: float
     y: float
     count: int = 1
-    hits: List[Tuple[float, float]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if not self.hits:
-            self.hits = [(self.x, self.y)]
+        self.hits = [(self.x, self.y)]
 
-    def update(self, x: float, y: float, max_hits: int = 50) -> None:
+    def update(self, x: float, y: float) -> None:
         self.hits.append((x, y))
-        if len(self.hits) > max_hits:
-            self.hits = self.hits[-max_hits:]
         self.count = len(self.hits)
+        # take average coords
         self.x = sum(h[0] for h in self.hits) / len(self.hits)
         self.y = sum(h[1] for h in self.hits) / len(self.hits)
 
@@ -56,8 +53,8 @@ class MarkerMapperNode(Node):
         self.declare_parameter('scan_topic', '/scan_light')
         self.declare_parameter('odom_topic', '/odometry/filtered')
         self.declare_parameter('map_frame', 'map')
-        self.declare_parameter('intensity_min', 190.0)
-        self.declare_parameter('cluster_radius_m', 0.07)
+        self.declare_parameter('intensity_min', 200.0)
+        self.declare_parameter('cluster_radius_m', 0.03)
         self.declare_parameter('merge_radius_m', 0.25)
         self.declare_parameter('min_observations', 3)
         self.declare_parameter('max_range_m', 8.0)
@@ -65,25 +62,33 @@ class MarkerMapperNode(Node):
         self.declare_parameter('lidar_y', 0.0)
         self.declare_parameter('lidar_yaw', 3.14)
         default_out = str(
-            Path.home() / 'ros2_ws/src/reflector_lighthouse/config/markers.yaml'
+            Path(get_package_share_directory('reflector_lighthouse'))
+            / 'config'
+            / 'markers.yaml'
         )
         self.declare_parameter('output_file', default_out)
         self.declare_parameter('enabled', True)
         self.declare_parameter('save_on_shutdown', True)
 
-        self._tracks: List[MarkerTrack] = []
+        self._markers: List[MarkerTrack] = []
         self._pose: Optional[Tuple[float, float, float]] = None
         self._map_frame = str(self.get_parameter('map_frame').value)
-        self._output_file = Path(str(self.get_parameter('output_file').value)).expanduser()
-        self._last_ready_count = 0
-        self._last_status_log = 0.0
+        self._output_file = Path(
+            str(self.get_parameter('output_file').value)
+        ).expanduser()
         self._shutdown_saved = False
 
-        self._markers_pub = self.create_publisher(MarkerArray, 'marker_mapper/markers', 10)
-        self._raw_pub = self.create_publisher(MarkerArray, 'marker_mapper/detections', 10)
+        self._markers_pub = self.create_publisher(
+            MarkerArray, 'marker_mapper/markers', 10
+        )
+        self._raw_pub = self.create_publisher(
+            MarkerArray, 'marker_mapper/detections', 10
+            )
 
         self.create_subscription(
-            Odometry, str(self.get_parameter('odom_topic').value), self._on_odom, 20
+            Odometry, str(
+                self.get_parameter('odom_topic').value),
+                self._on_odom, 20
         )
         self.create_subscription(
             LaserScan,
@@ -91,25 +96,21 @@ class MarkerMapperNode(Node):
             self._on_scan,
             qos_profile_sensor_data,
         )
-        self.create_service(Trigger, '/marker_mapper/save', self._on_save)
-        self.create_service(Trigger, '/marker_mapper/save_force', self._on_save_force)
-        self.create_service(Trigger, '/marker_mapper/clear', self._on_clear)
-        self.create_subscription(Empty, '/marker_mapper/save', self._on_save_topic, 10)
-        self.create_subscription(Empty, '/marker_mapper/save_force', self._on_save_force_topic, 10)
-        self.create_timer(0.5, self._publish_tracks)
-        self.create_timer(2.0, self._log_status)
+        self.create_service(
+            Trigger, '/marker_mapper/save', self._on_save
+        )
+        self.create_service(
+            Trigger, '/marker_mapper/clear', self._on_clear
+        )
+        self.create_subscription(
+            Empty, '/marker_mapper/save', self._on_save_topic, 10
+        )
+        self.create_timer(0.5, self._publish_markers)
 
         self.get_logger().info(f'output_file = {self._output_file}')
-        self.get_logger().info(
-            'Save commands (note: Trigger, NOT Triggerer):\n'
-            '  ros2 service call /marker_mapper/save std_srvs/srv/Trigger\n'
-            '  ros2 service call /marker_mapper/save_force std_srvs/srv/Trigger\n'
-            'Or:\n'
-            '  ros2 topic pub --once /marker_mapper/save std_msgs/msg/Empty "{}"\n'
-            '  ros2 topic pub --once /marker_mapper/save_force std_msgs/msg/Empty "{}"'
-        )
 
     def _on_odom(self, msg: Odometry) -> None:
+        """Save pose of robot."""
         self._pose = (
             msg.pose.pose.position.x,
             msg.pose.pose.position.y,
@@ -117,10 +118,14 @@ class MarkerMapperNode(Node):
         )
 
     def _on_scan(self, msg: LaserScan) -> None:
+        """Find stars."""
         if not bool(self.get_parameter('enabled').value) or self._pose is None:
             return
 
-        intens = list(msg.intensities) if msg.intensities else [255.0] * len(msg.ranges)
+        if msg.intensities:
+            intens = list(msg.intensities)
+        else:
+            intens = [255.0] * len(msg.ranges)
         if len(intens) < len(msg.ranges):
             intens += [0.0] * (len(msg.ranges) - len(intens))
 
@@ -149,65 +154,27 @@ class MarkerMapperNode(Node):
 
         merge_r = float(self.get_parameter('merge_radius_m').value)
         for x, y in xy:
-            self._ingest(x, y, merge_r)
-        self._check_ready_logs()
+            self._validate(x, y, merge_r)
 
-    def _ingest(self, x: float, y: float, merge_r: float) -> None:
-        best = None
-        best_d = merge_r
-        for t in self._tracks:
-            d = math.hypot(t.x - x, t.y - y)
-            if d < best_d:
-                best_d = d
-                best = t
-        if best is None:
-            self._tracks.append(MarkerTrack(x, y))
-            n = len(self._tracks)
+    def __validateingest(self, x: float, y: float, merge_r: float) -> None:
+        """Validate if delta in position."""
+        best = min(
+            self._markers,
+            key=lambda t: math.hypot(t.x - x, t.y - y),
+            default=None,
+        )
+        if best is None or math.hypot(best.x - x, best.y - y) >= merge_r:
+            self._markers.append(MarkerTrack(x, y))
             self.get_logger().info(
-                f'New marker track #{n}: x={x:.3f} y={y:.3f} '
-                f'(total tracks={n})'
+                f'New track #{len(self._markers)}: ({x:.3f}, {y:.3f})'
             )
         else:
             best.update(x, y)
 
-    def _check_ready_logs(self) -> None:
-        ready = len(self._accepted(force=False))
-        if ready > self._last_ready_count:
-            for k in range(self._last_ready_count + 1, ready + 1):
-                self.get_logger().info(f'Ready marker {k} (enough observations)')
-            self.get_logger().info(
-                f'Ready markers: {ready} / tracks: {len(self._tracks)} '
-                f'(min_observations={int(self.get_parameter("min_observations").value)})'
-            )
-            self._last_ready_count = ready
-
-    def _log_status(self) -> None:
-        if self._pose is None:
-            self.get_logger().warn(
-                'No odometry yet on '
-                f'{self.get_parameter("odom_topic").value} — tracks will stay empty'
-            )
-            return
-        need = int(self.get_parameter('min_observations').value)
-        ready = len(self._accepted(force=False))
-        parts = [
-            f'#{i}: hits={t.count}/{need} ({t.x:.2f},{t.y:.2f})'
-            for i, t in enumerate(self._tracks)
-        ]
-        summary = ', '.join(parts) if parts else 'none'
-        self.get_logger().info(
-            f'Status: ready={ready}, tracks={len(self._tracks)} | {summary}'
-        )
-
-    def _accepted(self, force: bool = False) -> List[MarkerTrack]:
-        if force:
-            return list(self._tracks)
-        need = int(self.get_parameter('min_observations').value)
-        return [t for t in self._tracks if t.count >= need]
-
-    def _write_yaml(self, tracks: List[MarkerTrack]) -> Tuple[bool, str]:
-        if not tracks:
-            return False, f'Nothing to save (tracks={len(self._tracks)})'
+    def _write_yaml(self, markers: List[MarkerTrack]) -> Tuple[bool, str]:
+        """Make yaml and write."""
+        if not markers:
+            return False, f'Nothing to save (markers={len(self._markers)})'
 
         path = self._output_file
         try:
@@ -220,7 +187,7 @@ class MarkerMapperNode(Node):
                         'y': round(t.y, 4),
                         'observations': int(t.count),
                     }
-                    for i, t in enumerate(tracks)
+                    for i, t in enumerate(markers)
                 ]
             }
             text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
@@ -228,75 +195,45 @@ class MarkerMapperNode(Node):
             if not path.is_file() or path.stat().st_size == 0:
                 return False, f'Write failed (empty/missing): {path}'
 
-            self.get_logger().info('=' * 50)
             self.get_logger().info(
-                f'SAVED {len(tracks)} marker(s) -> {path.resolve()}'
+                f'SAVED {len(markers)} marker(s) -> {path.resolve()}'
             )
-            for i, t in enumerate(tracks):
-                self.get_logger().info(
-                    f'  marker {i + 1}/{len(tracks)}: '
-                    f'id={i} x={t.x:.4f} y={t.y:.4f} hits={t.count}'
-                )
-            self.get_logger().info('=' * 50)
-            msg = f'Saved {len(tracks)} markers to {path.resolve()}'
-            return True, msg
-        except Exception as exc:  # noqa: BLE001
-            err = f'Failed to write {path}: {exc}'
+            return True, f'Saved {len(markers)} markers to {path.resolve()}'
+        except Exception as e:  # noqa: BLE001
+            err = f'Failed to write {path}: {e}'
             self.get_logger().error(err)
             return False, err
 
     def _on_save(self, _req, res):
-        accepted = self._accepted(force=False)
-        need = int(self.get_parameter('min_observations').value)
-        if not accepted:
+        """Save markers."""
+        markers = list(self._markers)
+        if not markers:
             res.success = False
-            res.message = (
-                f'No markers with >= {need} hits '
-                f'(tracks={len(self._tracks)}). '
-                f'Use /marker_mapper/save_force or wait longer.'
-            )
+            res.message = 'Nothing to save (no markers)'
             self.get_logger().warn(res.message)
             return res
-        self.get_logger().info(f'save: saving {len(accepted)} ready marker(s)...')
-        ok, msg = self._write_yaml(accepted)
-        res.success = ok
-        res.message = msg
-        return res
-
-    def _on_save_force(self, _req, res):
-        tracks = self._accepted(force=True)
-        self.get_logger().info(f'save_force: saving {len(tracks)} track(s)...')
-        ok, msg = self._write_yaml(tracks)
+        self.get_logger().info(f'saving {len(markers)} markers')
+        ok, msg = self._write_yaml(markers)
         res.success = ok
         res.message = msg
         return res
 
     def _on_save_topic(self, _msg) -> None:
-        class _Res:
-            success = False
-            message = ''
-        res = _Res()
-        self._on_save(None, res)
-        self.get_logger().info(f'topic save -> success={res.success} {res.message}')
-
-    def _on_save_force_topic(self, _msg) -> None:
-        class _Res:
-            success = False
-            message = ''
-        res = _Res()
-        self._on_save_force(None, res)
-        self.get_logger().info(f'topic save_force -> success={res.success} {res.message}')
+        """Response to trigger."""
+        res = self._on_save(None, Trigger.Response())
+        self.get_logger().info(f'success={res.success} {res.message}')
 
     def _on_clear(self, _req, res):
-        n = len(self._tracks)
-        self._tracks.clear()
-        self._last_ready_count = 0
+        """Clean markers."""
+        n = len(self._markers)
+        self._markers.clear()
         res.success = True
-        res.message = f'Cleared {n} tracks'
+        res.message = f'Cleared {n} markers'
         self.get_logger().info(res.message)
         return res
 
     def _publish_raw(self, xy, stamp) -> None:
+        """Publish reflects by lidar now."""
         arr = MarkerArray()
         clear = Marker()
         clear.header.frame_id = self._map_frame
@@ -321,24 +258,25 @@ class MarkerMapperNode(Node):
             arr.markers.append(m)
         self._raw_pub.publish(arr)
 
-    def _publish_tracks(self) -> None:
+    def _publish_markers(self) -> None:
+        """Pub markers as dots to ros2."""
         stamp = self.get_clock().now().to_msg()
         need = int(self.get_parameter('min_observations').value)
         arr = MarkerArray()
         clear = Marker()
         clear.header.frame_id = self._map_frame
         clear.header.stamp = stamp
-        clear.ns = 'tracks'
+        clear.ns = 'markers'
         clear.id = 0
         clear.action = Marker.DELETEALL
         arr.markers.append(clear)
 
-        for i, t in enumerate(self._tracks):
+        for i, t in enumerate(self._markers):
             ready = t.count >= need
             m = Marker()
             m.header.frame_id = self._map_frame
             m.header.stamp = stamp
-            m.ns = 'tracks'
+            m.ns = 'markers'
             m.id = i + 1
             m.type = Marker.CYLINDER
             m.action = Marker.ADD
@@ -369,7 +307,7 @@ class MarkerMapperNode(Node):
             text.text = f'{i}:{t.count}'
             arr.markers.append(text)
 
-        accepted = self._accepted(force=False)
+        accepted = list(self._markers)
         if len(accepted) >= 2:
             lines = Marker()
             lines.header.frame_id = self._map_frame
@@ -397,16 +335,14 @@ class MarkerMapperNode(Node):
         if not bool(self.get_parameter('save_on_shutdown').value):
             self.get_logger().info('save_on_shutdown=false, skip auto-save')
             return
-        ready = self._accepted(force=False)
-        tracks = ready if ready else self._accepted(force=True)
-        if not tracks:
+        markers = list(self._markers)
+        if not markers:
             self.get_logger().warn('Shutdown: no markers to save')
             return
         self.get_logger().info(
-            f'Shutdown: auto-saving {len(tracks)} marker(s) '
-            f'({"ready" if ready else "all tracks"})...'
+            f'Shutdown: auto-saving {len(markers)} marker(s)...'
         )
-        ok, msg = self._write_yaml(tracks)
+        ok, msg = self._write_yaml(markers)
         if ok:
             self.get_logger().info(f'Shutdown save OK: {msg}')
         else:

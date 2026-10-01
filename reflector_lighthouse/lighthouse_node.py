@@ -21,7 +21,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 from visualization_msgs.msg import Marker, MarkerArray
 
-from reflector_lighthouse.stars import (
+from reflector_lighthouse.common import (
     read_pairs,
     build_pairs,
     find_stars,
@@ -119,8 +119,8 @@ class LighthouseNode(Node):
         self.declare_parameter('pose_topic', '/light_pose')
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('markers_file', '')
-        self.declare_parameter('intensity_min', 190.0)
-        self.declare_parameter('cluster_radius_m', 0.07)
+        self.declare_parameter('intensity_min', 200.0)
+        self.declare_parameter('cluster_radius_m', 0.03)
         self.declare_parameter('max_dist_error', 0.08)
         self.declare_parameter('max_xy_error', 0.5)
         self.declare_parameter('max_pair_dist', 30.0)
@@ -138,13 +138,19 @@ class LighthouseNode(Node):
         self._load_markers()
 
         pose_topic = str(self.get_parameter('pose_topic').value)
-        self._pub = self.create_publisher(PoseWithCovarianceStamped, pose_topic, 10)
+        self._pub = self.create_publisher(
+            PoseWithCovarianceStamped, pose_topic, 10
+        )
         self._map_markers_pub = self.create_publisher(
             MarkerArray, 'lighthouse/map_markers', 10
         )
-        self._stars_pub = self.create_publisher(MarkerArray, 'lighthouse/stars', 10)
+        self._stars_pub = self.create_publisher(
+            MarkerArray, 'lighthouse/stars', 10
+        )
         self.create_subscription(
-            Odometry, str(self.get_parameter('odom_topic').value), self._on_odom, 20
+            Odometry,
+            str(self.get_parameter('odom_topic').value),
+            self._on_odom, 20
         )
         self.create_subscription(
             LaserScan,
@@ -158,6 +164,7 @@ class LighthouseNode(Node):
         )
 
     def _load_markers(self) -> None:
+        """Build or read pairs of markers."""
         path = str(self.get_parameter('markers_file').value)
         if not path:
             self.get_logger().warn('markers_file empty')
@@ -185,6 +192,7 @@ class LighthouseNode(Node):
         self.get_logger().info(f'Loaded {len(markers)} markers')
 
     def _publish_map_markers(self) -> None:
+        """Pub markers as dots to ros2."""
         if not self._markers:
             return
         stamp = self.get_clock().now().to_msg()
@@ -229,7 +237,10 @@ class LighthouseNode(Node):
             arr.markers.append(text)
         self._map_markers_pub.publish(arr)
 
-    def _publish_stars(self, stars_xy: List[Tuple[float, float]], stamp) -> None:
+    def _publish_stars(
+        self, stars_xy: List[Tuple[float, float]], stamp
+    ) -> None:
+        """Publish reflects by lidar now."""
         arr = MarkerArray()
         clear = Marker()
         clear.header.frame_id = self._map_frame
@@ -266,9 +277,7 @@ class LighthouseNode(Node):
         if self._pose is None or not self._pairs:
             return
 
-        intens = list(msg.intensities) if msg.intensities else [255.0] * len(msg.ranges)
-        if len(intens) < len(msg.ranges):
-            intens += [0.0] * (len(msg.ranges) - len(intens))
+        intens = msg.intensities
 
         stars = find_stars(
             msg.ranges,

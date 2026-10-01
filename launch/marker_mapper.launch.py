@@ -15,7 +15,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     lighthouse_dir = get_package_share_directory('reflector_lighthouse')
     default_params = os.path.join(lighthouse_dir, 'config', 'params.yaml')
-    default_out = '/home/user/ros2_ws/src/reflector_lighthouse/config/markers.yaml'
+    default_out = os.path.join(lighthouse_dir, 'config', 'markers.yaml')
 
     namespace = LaunchConfiguration('namespace')
     use_namespace = LaunchConfiguration('use_namespace')

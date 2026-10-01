@@ -7,6 +7,7 @@ from typing import List, Sequence, Tuple
 
 
 def yaw_from_quat(q) -> float:
+    """Yaw (rad) from quaternion."""
     return math.atan2(
         2.0 * (q.w * q.z + q.x * q.y),
         1.0 - 2.0 * (q.y * q.y + q.z * q.z),
@@ -14,6 +15,7 @@ def yaw_from_quat(q) -> float:
 
 
 def quat_from_yaw(yaw: float) -> Tuple[float, float, float, float]:
+    """Quaternion (x,y,z,w) from yaw (rad)."""
     return (0.0, 0.0, math.sin(yaw * 0.5), math.cos(yaw * 0.5))
 
 
