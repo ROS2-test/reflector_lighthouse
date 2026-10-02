@@ -58,9 +58,9 @@ class MarkerMapperNode(Node):
         self.declare_parameter('merge_radius_m', 0.25)
         self.declare_parameter('min_observations', 3)
         self.declare_parameter('max_range_m', 8.0)
-        self.declare_parameter('lidar_x', 0.01)
+        self.declare_parameter('lidar_x', 0.6)
         self.declare_parameter('lidar_y', 0.0)
-        self.declare_parameter('lidar_yaw', 3.14)
+        self.declare_parameter('lidar_yaw', -3.14)
         default_out = str(
             Path(get_package_share_directory('reflector_lighthouse'))
             / 'config'
@@ -156,8 +156,8 @@ class MarkerMapperNode(Node):
         for x, y in xy:
             self._validate(x, y, merge_r)
 
-    def __validateingest(self, x: float, y: float, merge_r: float) -> None:
-        """Validate if delta in position."""
+    def _validate(self, x: float, y: float, merge_r: float) -> None:
+        """Merge detection into nearest track or start a new one."""
         best = min(
             self._markers,
             key=lambda t: math.hypot(t.x - x, t.y - y),
