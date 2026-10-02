@@ -69,9 +69,12 @@ class MarkerMapperNode(Node):
         self.declare_parameter('output_file', default_out)
         self.declare_parameter('enabled', True)
         self.declare_parameter('save_on_shutdown', True)
+        self.declare_parameter('draw_max_speed', 0.1)
 
         self._markers: List[MarkerTrack] = []
         self._pose: Optional[Tuple[float, float, float]] = None
+        self._v_lin = 0.0
+        self._v_ang = 0.0
         self._map_frame = str(self.get_parameter('map_frame').value)
         self._output_file = Path(
             str(self.get_parameter('output_file').value)
@@ -116,6 +119,12 @@ class MarkerMapperNode(Node):
             msg.pose.pose.position.y,
             yaw_from_quat(msg.pose.pose.orientation),
         )
+        self._v_lin = abs(msg.twist.twist.linear.x)
+        self._v_ang = abs(msg.twist.twist.angular.z)
+
+    def _is_still(self) -> bool:
+        lim = float(self.get_parameter('draw_max_speed').value)
+        return self._v_lin < lim and self._v_ang < lim
 
     def _on_scan(self, msg: LaserScan) -> None:
         """Find stars."""
@@ -156,7 +165,7 @@ class MarkerMapperNode(Node):
         for x, y in xy:
             self._validate(x, y, merge_r)
 
-    def _validate(self, x: float, y: float, merge_r: float) -> None:
+    def __validateingest(self, x: float, y: float, merge_r: float) -> None:
         """Merge detection into nearest track or start a new one."""
         best = min(
             self._markers,
@@ -234,6 +243,8 @@ class MarkerMapperNode(Node):
 
     def _publish_raw(self, xy, stamp) -> None:
         """Publish reflects by lidar now."""
+        if not self._is_still():
+            return
         arr = MarkerArray()
         clear = Marker()
         clear.header.frame_id = self._map_frame
@@ -260,6 +271,8 @@ class MarkerMapperNode(Node):
 
     def _publish_markers(self) -> None:
         """Pub markers as dots to ros2."""
+        if not self._is_still():
+            return
         stamp = self.get_clock().now().to_msg()
         need = int(self.get_parameter('min_observations').value)
         arr = MarkerArray()
