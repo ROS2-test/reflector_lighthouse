@@ -135,7 +135,7 @@ class LighthouseNode(Node):
         self._pairs = []
         self._markers: List[Tuple[float, float]] = []
         self._pose: Optional[Tuple[float, float, float]] = None
-        self._w = 0.0
+        self._ang_speed = 0.0
         self._map_frame = str(self.get_parameter('map_frame').value)
         self._load_markers()
 
@@ -274,7 +274,7 @@ class LighthouseNode(Node):
             msg.pose.pose.position.y,
             yaw_from_quat(msg.pose.pose.orientation),
         )
-        self._yaw_rate = float(msg.twist.twist.angular.z)
+        self._ang_speed = float(msg.twist.twist.angular.z)
 
     def _on_scan(self, msg: LaserScan) -> None:
         if self._pose is None or not self._pairs:
@@ -304,7 +304,7 @@ class LighthouseNode(Node):
         if len(stars) < 2:
             return
         # if w twist > max_w dont pub pose
-        if abs(self._w) > float(self.get_parameter('max_w').value):
+        if abs(self._ang_speed) > float(self.get_parameter('max_w').value):
             return
         result = estimate_pose(
             stars_xy,

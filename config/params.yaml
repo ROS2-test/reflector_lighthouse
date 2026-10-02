@@ -19,7 +19,7 @@ lighthouse_node:
     max_xy_error: 3.0
     max_pair_dist: 30.0
     min_votes: 2
-    max_yaw_rate: 0.3
+    max_w: 0.3
     pose_variance_xy: 0.05
     pose_variance_yaw: 0.05
 
