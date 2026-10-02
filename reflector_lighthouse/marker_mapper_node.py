@@ -86,12 +86,13 @@ class MarkerMapperNode(Node):
         )
         self._raw_pub = self.create_publisher(
             MarkerArray, 'marker_mapper/detections', 10
-            )
+        )
 
         self.create_subscription(
-            Odometry, str(
-                self.get_parameter('odom_topic').value),
-                self._on_odom, 20
+            Odometry,
+            str(self.get_parameter('odom_topic').value),
+            self._on_odom,
+            20,
         )
         self.create_subscription(
             LaserScan,
@@ -161,11 +162,14 @@ class MarkerMapperNode(Node):
         )
         self._publish_raw(xy, msg.header.stamp)
 
+        if not self._is_still():
+            return
+
         merge_r = float(self.get_parameter('merge_radius_m').value)
         for x, y in xy:
             self._validate(x, y, merge_r)
 
-    def __validateingest(self, x: float, y: float, merge_r: float) -> None:
+    def _validate(self, x: float, y: float, merge_r: float) -> None:
         """Merge detection into nearest track or start a new one."""
         best = min(
             self._markers,

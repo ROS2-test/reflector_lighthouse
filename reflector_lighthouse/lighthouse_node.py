@@ -125,9 +125,9 @@ class LighthouseNode(Node):
         self.declare_parameter('max_xy_error', 2.0)
         self.declare_parameter('max_pair_dist', 30.0)
         self.declare_parameter('min_votes', 2)
-        self.declare_parameter('lidar_x', 0.01)
+        self.declare_parameter('lidar_x', 0.6)
         self.declare_parameter('lidar_y', 0.0)
-        self.declare_parameter('lidar_yaw', 3.14)
+        self.declare_parameter('lidar_yaw', -3.14)
         self.declare_parameter('pose_variance_xy', 0.05)
         self.declare_parameter('pose_variance_yaw', 0.05)
         self.declare_parameter('max_w', 0.3)
@@ -280,11 +280,12 @@ class LighthouseNode(Node):
         if self._pose is None or not self._pairs:
             return
 
-        intens = msg.intensities
+        if not msg.intensities:
+            return
 
         stars = find_stars(
             msg.ranges,
-            intens,
+            msg.intensities,
             msg.angle_min,
             msg.angle_increment,
             float(self.get_parameter('intensity_min').value),
